@@ -286,7 +286,6 @@ board_c_files += \
 	$(Drivers_path)/STM32H7RSxx_HAL_Driver/Src/stm32h7rsxx_hal_tim.c \
 	$(Drivers_path)/STM32H7RSxx_HAL_Driver/Src/stm32h7rsxx_hal_tim_ex.c \
 	$(Drivers_path)/STM32H7RSxx_HAL_Driver/Src/stm32h7rsxx_hal_xspi.c \
-	$(Drivers_path)/STM32H7RSxx_HAL_Driver/Src/stm32h7rsxx_hal_sai.c
 
 board_c_files += \
     Appli/Core/Src/main.c \

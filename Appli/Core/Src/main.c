@@ -28,7 +28,7 @@
 #include "task.h"
 #include "wm8904.h"
 #include <math.h>
-
+#include "dsp/fast_math_functions_f16.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -220,7 +220,7 @@ int main(void)
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
   /* creation of TouchGFXTask */
-  // TouchGFXTaskHandle = osThreadNew(TouchGFX_Task, NULL, &TouchGFXTask_attributes);
+  TouchGFXTaskHandle = osThreadNew(TouchGFX_Task, NULL, &TouchGFXTask_attributes);
 
   /* creation of audioTaskHandle */
   audioTaskHandleHandle = osThreadNew(audioTaskHandler, NULL, &audioTaskHandle_attributes);
@@ -819,7 +819,7 @@ void fill_sine_wave(int16_t* pData, size_t len)
 	buffer_is_proccessing = 1;
 	for (uint16_t i = 0; i < len ; i+=2)
 	{
-		sample = (int16_t)(sinf(phase) * 32767); // Scale to int16 range
+		sample = (int16_t)(arm_sin_f32(phase) * 32767); // Scale to int16 range
 		*ptr_data++ = sample;
 		*ptr_data++ = sample;
 
