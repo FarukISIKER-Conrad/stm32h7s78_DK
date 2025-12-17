@@ -27,6 +27,8 @@
 /* USER CODE BEGIN Includes */
 #include "task.h"
 #include "wm8904.h"
+#include <math.h>
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -56,16 +58,16 @@ GPU2D_HandleTypeDef hgpu2d;
 
 I2C_HandleTypeDef hi2c1;
 
-I2S_HandleTypeDef hi2s6;
-DMA_NodeTypeDef Node_GPDMA1_Channel0 __attribute__((section("noncacheable_buffer")));
-DMA_QListTypeDef List_GPDMA1_Channel0;
-DMA_HandleTypeDef handle_GPDMA1_Channel0;
-
 JPEG_HandleTypeDef hjpeg;
 DMA_HandleTypeDef handle_HPDMA1_Channel1;
 DMA_HandleTypeDef handle_HPDMA1_Channel0;
 
 LTDC_HandleTypeDef hltdc;
+
+SAI_HandleTypeDef hsai_BlockB2;
+DMA_NodeTypeDef Node_GPDMA1_Channel0 __attribute__((section("noncacheable_buffer")));
+DMA_QListTypeDef List_GPDMA1_Channel0;
+DMA_HandleTypeDef handle_GPDMA1_Channel0;
 
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -94,7 +96,13 @@ const osMessageQueueAttr_t queue_gpio_attributes = {
   .name = "queue_gpio"
 };
 /* USER CODE BEGIN PV */
-WM8904_Object_t WM8904_Obj;
+#define SINE_WAVE_SIZE 2048
+ALIGN_32BYTES (int16_t sine_wave_440hz_48khz[SINE_WAVE_SIZE]) __attribute__((section("BufferSection"))); //__attribute__((section("BufferSection")));
+static volatile float phase = 0.0f;
+static const float sampling_frequency = 48000.0f;
+static volatile float phase_inc = M_TWOPI * 440.0f / sampling_frequency;
+static volatile uint8_t buffer_is_proccessing = 0;
+static volatile uint32_t dma_overflow = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -111,164 +119,18 @@ static void MX_I2C1_Init(void);
 static void MX_GPU2D_Init(void);
 static void MX_ICACHE_GPU2D_Init(void);
 static void MX_GFXMMU_Init(void);
-static void MX_I2S6_Init(void);
+static void MX_SAI2_Init(void);
 void StartDefaultTask(void *argument);
 extern void TouchGFX_Task(void *argument);
 void audioTaskHandler(void *argument);
 
 /* USER CODE BEGIN PFP */
-static int32_t WM8904_IO_Init(void);
-static int32_t WM8904_IO_DeInit(void);
-static int32_t WM8904_IO_WriteReg(uint16_t DevAddr, uint16_t Reg, uint8_t *pData, uint16_t Length);
-static int32_t WM8904_IO_ReadReg(uint16_t DevAddr, uint16_t Reg, uint8_t *pData, uint16_t Length);
-static int32_t WM8904_IO_GetTick(void);
-static int32_t WM8904_Probe(void);
+void fill_sine_wave(int16_t* pData, size_t len);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-/* WM8904 I2C Address (7-bit: 0x1A, 8-bit write: 0x34) */
-#define WM8904_I2C_ADDRESS  0x34U
 
-/**
-  * @brief  WM8904 I2C Bus IO Init
-  * @retval 0 if correct communication, else wrong communication
-  */
-static int32_t WM8904_IO_Init(void)
-{
-  /* I2C zaten MX_I2C1_Init() ile baslatildi */
-  return 0;
-}
-
-/**
-  * @brief  WM8904 I2C Bus IO DeInit
-  * @retval 0 if correct communication, else wrong communication
-  */
-static int32_t WM8904_IO_DeInit(void)
-{
-  return 0;
-}
-
-/**
-  * @brief  WM8904 I2C Bus register write
-  * @param  DevAddr: Device address
-  * @param  Reg: Register address
-  * @param  pData: Data buffer
-  * @param  Length: Data length
-  * @retval 0 if correct communication, else wrong communication
-  */
-static int32_t WM8904_IO_WriteReg(uint16_t DevAddr, uint16_t Reg, uint8_t *pData, uint16_t Length)
-{
-  uint8_t tmp[4];
-
-  /* WM8904 register adresi 8-bit, data 16-bit big-endian */
-  tmp[0] = (uint8_t)(Reg & 0xFFU);
-  tmp[1] = pData[1]; /* MSB first */
-  tmp[2] = pData[0]; /* LSB second */
-
-  if (HAL_I2C_Master_Transmit(&hi2c1, DevAddr, tmp, 3, 1000) != HAL_OK)
-  {
-    return -1;
-  }
-  return 0;
-}
-
-/**
-  * @brief  WM8904 I2C Bus register read
-  * @param  DevAddr: Device address
-  * @param  Reg: Register address
-  * @param  pData: Data buffer
-  * @param  Length: Data length
-  * @retval 0 if correct communication, else wrong communication
-  */
-static int32_t WM8904_IO_ReadReg(uint16_t DevAddr, uint16_t Reg, uint8_t *pData, uint16_t Length)
-{
-  uint8_t reg_addr = (uint8_t)(Reg & 0xFFU);
-  uint8_t tmp[2];
-
-  /* Register adresini gonder */
-  if (HAL_I2C_Master_Transmit(&hi2c1, DevAddr, &reg_addr, 1, 1000) != HAL_OK)
-  {
-    return -1;
-  }
-
-  /* Veriyi oku */
-  if (HAL_I2C_Master_Receive(&hi2c1, DevAddr | 0x01U, tmp, 2, 1000) != HAL_OK)
-  {
-    return -1;
-  }
-
-  /* Big-endian -> little-endian donusumu */
-  pData[0] = tmp[1]; /* LSB */
-  pData[1] = tmp[0]; /* MSB */
-
-  return 0;
-}
-
-/**
-  * @brief  WM8904 get tick
-  * @retval Current tick value
-  */
-static int32_t WM8904_IO_GetTick(void)
-{
-  return (int32_t)HAL_GetTick();
-}
-
-/**
-  * @brief  WM8904 Probe - Codec'i baslat
-  * @retval 0 if correct communication, else wrong communication
-  */
-static int32_t WM8904_Probe(void)
-{
-  int32_t ret;
-  uint32_t id;
-  WM8904_IO_t IOCtx;
-  WM8904_Init_t codec_init;
-
-  /* IO fonksiyonlarini kaydet */
-  IOCtx.Init      = WM8904_IO_Init;
-  IOCtx.DeInit    = WM8904_IO_DeInit;
-  IOCtx.Address   = WM8904_I2C_ADDRESS;
-  IOCtx.WriteReg  = WM8904_IO_WriteReg;
-  IOCtx.ReadReg   = WM8904_IO_ReadReg;
-  IOCtx.GetTick   = WM8904_IO_GetTick;
-
-  ret = WM8904_RegisterBusIO(&WM8904_Obj, &IOCtx);
-  if (ret != WM8904_OK)
-  {
-    return ret;
-  }
-
-  /* Codec ID'yi oku ve dogrula */
-  ret = WM8904_ReadID(&WM8904_Obj, &id);
-  if (ret != WM8904_OK)
-  {
-    return ret;
-  }
-
-  if ((id & WM8904_ID_MASK) != WM8904_ID)
-  {
-    return WM8904_ERROR;
-  }
-
-  /* Codec'i yapilandir */
-  codec_init.InputDevice  = WM8904_IN_NONE;           /* Giris kullanmiyoruz */
-  codec_init.OutputDevice = WM8904_OUT_HEADPHONE;     /* Kulaklik cikisi */
-  codec_init.Frequency    = WM8904_FREQUENCY_48K;     /* 48kHz ornekleme frekansi */
-  codec_init.Resolution   = WM8904_RESOLUTION_16B;    /* 16-bit cozunurluk */
-  codec_init.Volume       = 80;                       /* %80 ses seviyesi */
-
-  ret = WM8904_Init(&WM8904_Obj, &codec_init);
-  if (ret != WM8904_OK)
-  {
-    return ret;
-  }
-
-  /* Codec'i calmaya hazir hale getir */
-  ret = WM8904_Play(&WM8904_Obj);
-
-  return ret;
-}
 /* USER CODE END 0 */
 
 /**
@@ -322,17 +184,11 @@ int main(void)
   MX_GPU2D_Init();
   MX_ICACHE_GPU2D_Init();
   MX_GFXMMU_Init();
-  MX_I2S6_Init();
+  MX_SAI2_Init();
   MX_TouchGFX_Init();
   /* Call PreOsInit function */
   MX_TouchGFX_PreOSInit();
   /* USER CODE BEGIN 2 */
-
-  /* WM8904 Audio Codec'i baslat */
-  if (WM8904_Probe() != WM8904_OK)
-  {
-	  __NOP();
-  }
 
   /* USER CODE END 2 */
 
@@ -364,7 +220,7 @@ int main(void)
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
   /* creation of TouchGFXTask */
-  TouchGFXTaskHandle = osThreadNew(TouchGFX_Task, NULL, &TouchGFXTask_attributes);
+  // TouchGFXTaskHandle = osThreadNew(TouchGFX_Task, NULL, &TouchGFXTask_attributes);
 
   /* creation of audioTaskHandle */
   audioTaskHandleHandle = osThreadNew(audioTaskHandler, NULL, &audioTaskHandle_attributes);
@@ -691,42 +547,6 @@ static void MX_I2C1_Init(void)
 }
 
 /**
-  * @brief I2S6 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_I2S6_Init(void)
-{
-
-  /* USER CODE BEGIN I2S6_Init 0 */
-
-  /* USER CODE END I2S6_Init 0 */
-
-  /* USER CODE BEGIN I2S6_Init 1 */
-
-  /* USER CODE END I2S6_Init 1 */
-  hi2s6.Instance = SPI6;
-  hi2s6.Init.Mode = I2S_MODE_MASTER_FULLDUPLEX;
-  hi2s6.Init.Standard = I2S_STANDARD_PHILIPS;
-  hi2s6.Init.DataFormat = I2S_DATAFORMAT_16B;
-  hi2s6.Init.MCLKOutput = I2S_MCLKOUTPUT_ENABLE;
-  hi2s6.Init.AudioFreq = I2S_AUDIOFREQ_48K;
-  hi2s6.Init.CPOL = I2S_CPOL_LOW;
-  hi2s6.Init.FirstBit = I2S_FIRSTBIT_MSB;
-  hi2s6.Init.WSInversion = I2S_WS_INVERSION_DISABLE;
-  hi2s6.Init.Data24BitAlignment = I2S_DATA_24BIT_ALIGNMENT_RIGHT;
-  hi2s6.Init.MasterKeepIOState = I2S_MASTER_KEEP_IO_STATE_DISABLE;
-  if (HAL_I2S_Init(&hi2s6) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN I2S6_Init 2 */
-
-  /* USER CODE END I2S6_Init 2 */
-
-}
-
-/**
   * @brief ICACHE_GPU2D Initialization Function
   * @param None
   * @retval None
@@ -849,6 +669,42 @@ static void MX_LTDC_Init(void)
 }
 
 /**
+  * @brief SAI2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SAI2_Init(void)
+{
+
+  /* USER CODE BEGIN SAI2_Init 0 */
+
+  /* USER CODE END SAI2_Init 0 */
+
+  /* USER CODE BEGIN SAI2_Init 1 */
+
+  /* USER CODE END SAI2_Init 1 */
+  hsai_BlockB2.Instance = SAI2_Block_B;
+  hsai_BlockB2.Init.AudioMode = SAI_MODEMASTER_TX;
+  hsai_BlockB2.Init.Synchro = SAI_ASYNCHRONOUS;
+  hsai_BlockB2.Init.OutputDrive = SAI_OUTPUTDRIVE_DISABLE;
+  hsai_BlockB2.Init.NoDivider = SAI_MASTERDIVIDER_ENABLE;
+  hsai_BlockB2.Init.FIFOThreshold = SAI_FIFOTHRESHOLD_EMPTY;
+  hsai_BlockB2.Init.AudioFrequency = SAI_AUDIO_FREQUENCY_48K;
+  hsai_BlockB2.Init.SynchroExt = SAI_SYNCEXT_DISABLE;
+  hsai_BlockB2.Init.MonoStereoMode = SAI_STEREOMODE;
+  hsai_BlockB2.Init.CompandingMode = SAI_NOCOMPANDING;
+  hsai_BlockB2.Init.TriState = SAI_OUTPUT_NOTRELEASED;
+  if (HAL_SAI_InitProtocol(&hsai_BlockB2, SAI_I2S_MSBJUSTIFIED, SAI_PROTOCOL_DATASIZE_16BIT, 2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SAI2_Init 2 */
+
+  /* USER CODE END SAI2_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -861,9 +717,9 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOF_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
 
@@ -916,6 +772,14 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LCD_BL_CTRL_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : PA5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_5;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Alternate = GPIO_AF8_SPI6;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(TP_IRQ_EXTI_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(TP_IRQ_EXTI_IRQn);
@@ -928,18 +792,19 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void update_phase_inc(float frequency);
+
 void gpio_irq_handler(uint16_t btn)
 {
+	static float frequency = 100;
 	uint16_t _btn = 13;
 	osMessageQueuePut(queue_gpioHandle, &_btn, 5, 0);
+	if (frequency > 1000)
+		frequency = 100;
+	else
+		frequency += 100;
+	update_phase_inc(frequency);
 }
-
-#include <math.h>
-static int16_t __attribute__((section(".BufferSection"))) sine_wave_440hz_48khz[2][1024];
-static float phase = 0.0f;
-static float phase_inc = 0.0f;
-static const float sampling_frequency = 48000.0f;
-static uint8_t index = 0;
 
 
 void update_phase_inc(float frequency)
@@ -947,28 +812,53 @@ void update_phase_inc(float frequency)
 	phase_inc = M_TWOPI * frequency / sampling_frequency;
 }
 
-void fill_sine_wave(int16_t* pData)
+void fill_sine_wave(int16_t* pData, size_t len)
 {
-	size_t len = sizeof(sine_wave_440hz_48khz[0]) / sizeof(int16_t);
-	for (size_t i = 0; i < len; i++)
+	int16_t sample = 0;
+	int16_t* ptr_data = pData;
+	buffer_is_proccessing = 1;
+	for (uint16_t i = 0; i < len ; i+=2)
 	{
-		pData[i] = sinf(phase) * 32767.0f;
-		phase += phase_inc;
+		sample = (int16_t)(sinf(phase) * 32767); // Scale to int16 range
+		*ptr_data++ = sample;
+		*ptr_data++ = sample;
+
+		phase = phase + phase_inc;
+
 		if (phase >= M_TWOPI)
 		{
 			phase -= M_TWOPI;
 		}
+
 	}
+	buffer_is_proccessing = 0;
 }
 
-void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s)
+void HAL_SAI_TxHalfCpltCallback(SAI_HandleTypeDef *hsai)
 {
-	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-	vTaskGenericNotifyGiveFromISR(audioTaskHandleHandle, 0, &xHigherPriorityTaskWoken);
-
-	if (xHigherPriorityTaskWoken)
-		portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
+	if (buffer_is_proccessing)
+	{
+		++dma_overflow;
+	}else
+	fill_sine_wave(sine_wave_440hz_48khz, SINE_WAVE_SIZE / 2);
 }
+
+void HAL_SAI_TxCpltCallback(SAI_HandleTypeDef *hsai)
+{
+	if (buffer_is_proccessing)
+	{
+		++dma_overflow;
+	}else
+	fill_sine_wave(&sine_wave_440hz_48khz[SINE_WAVE_SIZE / 2], SINE_WAVE_SIZE / 2);
+}
+//void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s)
+//{
+//	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+//	vTaskGenericNotifyGiveFromISR(audioTaskHandleHandle, 0, &xHigherPriorityTaskWoken);
+//
+//	if (xHigherPriorityTaskWoken)
+//		portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
+//}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -981,6 +871,7 @@ void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
+	vTaskDelete(NULL);
   /* Infinite loop */
   for(;;)
   {
@@ -1003,17 +894,16 @@ void audioTaskHandler(void *argument)
   // I2S ve I2C başlatıldıktan sonra:
   
     // I2S DMA ile 48kHz 16-bit ses verisi gönder
-    update_phase_inc(440);
-    fill_sine_wave(sine_wave_440hz_48khz[0]);
-    HAL_I2S_Transmit_DMA(&hi2s6, (const uint16_t *)sine_wave_440hz_48khz[index], (uint16_t)(sizeof(sine_wave_440hz_48khz[0]) / sizeof(int16_t)));
 
+	  fill_sine_wave(sine_wave_440hz_48khz, SINE_WAVE_SIZE);
+	  osDelay(1000);
+	  // sine_wave_440hz_48khz[0] = 25300;
+	  HAL_SAI_Abort(&hsai_BlockB2);
+	  MX_SAI2_Init();
+	  HAL_SAI_Transmit_DMA(&hsai_BlockB2, (uint8_t*)sine_wave_440hz_48khz, SINE_WAVE_SIZE);
   /* Infinite loop */
   for(;;)
   {
-	  index = (index == 0) ? 1 : 0;
-	  fill_sine_wave(sine_wave_440hz_48khz[index]);
-	  xTaskGenericNotifyWait(0, 0, 0, 0, portMAX_DELAY);
-	  // HAL_I2S_Transmit_DMA(&hi2s6, (const uint16_t *)sine_wave_440hz_48khz[index], (uint16_t)(sizeof(sine_wave_440hz_48khz[0]) / sizeof(int16_t)));
 	  osDelay(10);
   }
   /* USER CODE END audioTaskHandler */

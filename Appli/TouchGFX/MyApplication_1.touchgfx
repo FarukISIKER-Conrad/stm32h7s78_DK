@@ -59,15 +59,7 @@
       },
       {
         "Name": "Screen2",
-        "Components": [
-          {
-            "Type": "Image",
-            "Name": "image1",
-            "Width": 800,
-            "Height": 480,
-            "RelativeFilename": "__generated\\alternate_theme_images_previews_preview5.png"
-          }
-        ],
+        "Components": [],
         "Interactions": [
           {
             "InteractionName": "Interaction1",
