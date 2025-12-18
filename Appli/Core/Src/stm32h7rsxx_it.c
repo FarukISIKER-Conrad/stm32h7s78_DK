@@ -61,9 +61,9 @@ extern DMA_HandleTypeDef handle_HPDMA1_Channel1;
 extern DMA_HandleTypeDef handle_HPDMA1_Channel0;
 extern JPEG_HandleTypeDef hjpeg;
 extern LTDC_HandleTypeDef hltdc;
-extern DMA_NodeTypeDef Node_GPDMA1_Channel0;
-extern DMA_QListTypeDef List_GPDMA1_Channel0;
-extern DMA_HandleTypeDef handle_GPDMA1_Channel0;
+extern DMA_NodeTypeDef Node_GPDMA1_Channel15;
+extern DMA_QListTypeDef List_GPDMA1_Channel15;
+extern DMA_HandleTypeDef handle_GPDMA1_Channel15;
 extern TIM_HandleTypeDef htim6;
 
 /* USER CODE BEGIN EV */
@@ -197,20 +197,6 @@ void EXTI13_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles GPDMA1 Channel 0 global interrupt.
-  */
-void GPDMA1_Channel0_IRQHandler(void)
-{
-  /* USER CODE BEGIN GPDMA1_Channel0_IRQn 0 */
-
-  /* USER CODE END GPDMA1_Channel0_IRQn 0 */
-  HAL_DMA_IRQHandler(&handle_GPDMA1_Channel0);
-  /* USER CODE BEGIN GPDMA1_Channel0_IRQn 1 */
-
-  /* USER CODE END GPDMA1_Channel0_IRQn 1 */
-}
-
-/**
   * @brief This function handles TIM6 global interrupt.
   */
 void TIM6_IRQHandler(void)
@@ -292,6 +278,20 @@ void JPEG_IRQHandler(void)
   /* USER CODE BEGIN JPEG_IRQn 1 */
 
   /* USER CODE END JPEG_IRQn 1 */
+}
+
+/**
+  * @brief This function handles GPDMA1 Channel 15 global interrupt.
+  */
+void GPDMA1_Channel15_IRQHandler(void)
+{
+  /* USER CODE BEGIN GPDMA1_Channel15_IRQn 0 */
+
+  /* USER CODE END GPDMA1_Channel15_IRQn 0 */
+  HAL_DMA_IRQHandler(&handle_GPDMA1_Channel15);
+  /* USER CODE BEGIN GPDMA1_Channel15_IRQn 1 */
+
+  /* USER CODE END GPDMA1_Channel15_IRQn 1 */
 }
 
 /**

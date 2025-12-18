@@ -686,11 +686,11 @@ void HAL_LTDC_MspDeInit(LTDC_HandleTypeDef* hltdc)
 
 }
 
-extern DMA_NodeTypeDef Node_GPDMA1_Channel0;
+extern DMA_NodeTypeDef Node_GPDMA1_Channel15;
 
-extern DMA_QListTypeDef List_GPDMA1_Channel0;
+extern DMA_QListTypeDef List_GPDMA1_Channel15;
 
-extern DMA_HandleTypeDef handle_GPDMA1_Channel0;
+extern DMA_HandleTypeDef handle_GPDMA1_Channel15;
 
 static uint32_t SAI2_client =0;
 
@@ -734,7 +734,7 @@ void HAL_SAI_MspInit(SAI_HandleTypeDef* hsai)
 
       /* Peripheral DMA init*/
 
-    NodeConfig.NodeType = DMA_GPDMA_LINEAR_NODE;
+    NodeConfig.NodeType = DMA_GPDMA_2D_NODE;
     NodeConfig.Init.Request = GPDMA1_REQUEST_SAI2_B;
     NodeConfig.Init.BlkHWRequest = DMA_BREQ_SINGLE_BURST;
     NodeConfig.Init.Direction = DMA_MEMORY_TO_PERIPH;
@@ -747,43 +747,48 @@ void HAL_SAI_MspInit(SAI_HandleTypeDef* hsai)
     NodeConfig.Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0|DMA_DEST_ALLOCATED_PORT1;
     NodeConfig.Init.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;
     NodeConfig.Init.Mode = DMA_NORMAL;
+    NodeConfig.RepeatBlockConfig.RepeatCount = 1;
+    NodeConfig.RepeatBlockConfig.SrcAddrOffset = 0;
+    NodeConfig.RepeatBlockConfig.DestAddrOffset = 0;
+    NodeConfig.RepeatBlockConfig.BlkSrcAddrOffset = 0;
+    NodeConfig.RepeatBlockConfig.BlkDestAddrOffset = 0;
     NodeConfig.TriggerConfig.TriggerPolarity = DMA_TRIG_POLARITY_MASKED;
     NodeConfig.DataHandlingConfig.DataExchange = DMA_EXCHANGE_NONE;
     NodeConfig.DataHandlingConfig.DataAlignment = DMA_DATA_RIGHTALIGN_ZEROPADDED;
-    if (HAL_DMAEx_List_BuildNode(&NodeConfig, &Node_GPDMA1_Channel0) != HAL_OK)
+    if (HAL_DMAEx_List_BuildNode(&NodeConfig, &Node_GPDMA1_Channel15) != HAL_OK)
     {
       Error_Handler();
     }
 
-    if (HAL_DMAEx_List_InsertNode(&List_GPDMA1_Channel0, NULL, &Node_GPDMA1_Channel0) != HAL_OK)
+    if (HAL_DMAEx_List_InsertNode(&List_GPDMA1_Channel15, NULL, &Node_GPDMA1_Channel15) != HAL_OK)
     {
       Error_Handler();
     }
 
-    if (HAL_DMAEx_List_SetCircularMode(&List_GPDMA1_Channel0) != HAL_OK)
+    if (HAL_DMAEx_List_SetCircularMode(&List_GPDMA1_Channel15) != HAL_OK)
     {
       Error_Handler();
     }
 
-    handle_GPDMA1_Channel0.Instance = GPDMA1_Channel0;
-    handle_GPDMA1_Channel0.InitLinkedList.Priority = DMA_HIGH_PRIORITY;
-    handle_GPDMA1_Channel0.InitLinkedList.LinkStepMode = DMA_LSM_FULL_EXECUTION;
-    handle_GPDMA1_Channel0.InitLinkedList.LinkAllocatedPort = DMA_LINK_ALLOCATED_PORT0;
-    handle_GPDMA1_Channel0.InitLinkedList.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;
-    handle_GPDMA1_Channel0.InitLinkedList.LinkedListMode = DMA_LINKEDLIST_CIRCULAR;
-    if (HAL_DMAEx_List_Init(&handle_GPDMA1_Channel0) != HAL_OK)
+    handle_GPDMA1_Channel15.Instance = GPDMA1_Channel15;
+    handle_GPDMA1_Channel15.InitLinkedList.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;
+    handle_GPDMA1_Channel15.InitLinkedList.LinkStepMode = DMA_LSM_FULL_EXECUTION;
+    handle_GPDMA1_Channel15.InitLinkedList.LinkAllocatedPort = DMA_LINK_ALLOCATED_PORT0;
+    handle_GPDMA1_Channel15.InitLinkedList.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;
+    handle_GPDMA1_Channel15.InitLinkedList.LinkedListMode = DMA_LINKEDLIST_CIRCULAR;
+    if (HAL_DMAEx_List_Init(&handle_GPDMA1_Channel15) != HAL_OK)
     {
       Error_Handler();
     }
 
-    if (HAL_DMAEx_List_LinkQ(&handle_GPDMA1_Channel0, &List_GPDMA1_Channel0) != HAL_OK)
+    if (HAL_DMAEx_List_LinkQ(&handle_GPDMA1_Channel15, &List_GPDMA1_Channel15) != HAL_OK)
     {
       Error_Handler();
     }
 
-    __HAL_LINKDMA(hsai, hdmatx, handle_GPDMA1_Channel0);
+    __HAL_LINKDMA(hsai, hdmatx, handle_GPDMA1_Channel15);
 
-    if (HAL_DMA_ConfigChannelAttributes(&handle_GPDMA1_Channel0, DMA_CHANNEL_PRIV) != HAL_OK)
+    if (HAL_DMA_ConfigChannelAttributes(&handle_GPDMA1_Channel15, DMA_CHANNEL_PRIV) != HAL_OK)
     {
       Error_Handler();
     }

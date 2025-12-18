@@ -65,9 +65,9 @@ DMA_HandleTypeDef handle_HPDMA1_Channel0;
 LTDC_HandleTypeDef hltdc;
 
 SAI_HandleTypeDef hsai_BlockB2;
-DMA_NodeTypeDef Node_GPDMA1_Channel0 __attribute__((section("noncacheable_buffer")));
-DMA_QListTypeDef List_GPDMA1_Channel0;
-DMA_HandleTypeDef handle_GPDMA1_Channel0;
+DMA_NodeTypeDef Node_GPDMA1_Channel15 __attribute__((section("noncacheable_buffer")));
+DMA_QListTypeDef List_GPDMA1_Channel15;
+DMA_HandleTypeDef handle_GPDMA1_Channel15;
 
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -95,14 +95,18 @@ osMessageQueueId_t queue_gpioHandle;
 const osMessageQueueAttr_t queue_gpio_attributes = {
   .name = "queue_gpio"
 };
+/* Definitions for sema_audio */
+osSemaphoreId_t sema_audioHandle;
+const osSemaphoreAttr_t sema_audio_attributes = {
+  .name = "sema_audio"
+};
 /* USER CODE BEGIN PV */
-#define SINE_WAVE_SIZE 2048
+#define SINE_WAVE_SIZE (1024 * 2)
 ALIGN_32BYTES (int16_t sine_wave_440hz_48khz[SINE_WAVE_SIZE]) __attribute__((section("BufferSection"))); //__attribute__((section("BufferSection")));
-static volatile float phase = 0.0f;
+
 static const float sampling_frequency = 48000.0f;
-static volatile float phase_inc = M_TWOPI * 440.0f / sampling_frequency;
+static float phase_inc = M_TWOPI * 440.0f / sampling_frequency;
 static volatile uint8_t buffer_is_proccessing = 0;
-static volatile uint32_t dma_overflow = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -198,6 +202,10 @@ int main(void)
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
+
+  /* Create the semaphores(s) */
+  /* creation of sema_audio */
+  sema_audioHandle = osSemaphoreNew(1, 1, &sema_audio_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -430,8 +438,8 @@ static void MX_GPDMA1_Init(void)
   __HAL_RCC_GPDMA1_CLK_ENABLE();
 
   /* GPDMA1 interrupt Init */
-    HAL_NVIC_SetPriority(GPDMA1_Channel0_IRQn, 5, 0);
-    HAL_NVIC_EnableIRQ(GPDMA1_Channel0_IRQn);
+    HAL_NVIC_SetPriority(GPDMA1_Channel15_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(GPDMA1_Channel15_IRQn);
 
   /* USER CODE BEGIN GPDMA1_Init 1 */
 
@@ -694,7 +702,7 @@ static void MX_SAI2_Init(void)
   hsai_BlockB2.Init.MonoStereoMode = SAI_STEREOMODE;
   hsai_BlockB2.Init.CompandingMode = SAI_NOCOMPANDING;
   hsai_BlockB2.Init.TriState = SAI_OUTPUT_NOTRELEASED;
-  if (HAL_SAI_InitProtocol(&hsai_BlockB2, SAI_I2S_MSBJUSTIFIED, SAI_PROTOCOL_DATASIZE_16BIT, 2) != HAL_OK)
+  if (HAL_SAI_InitProtocol(&hsai_BlockB2, SAI_I2S_STANDARD, SAI_PROTOCOL_DATASIZE_16BIT, 2) != HAL_OK)
   {
     Error_Handler();
   }
@@ -772,14 +780,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LCD_BL_CTRL_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PA5 */
-  GPIO_InitStruct.Pin = GPIO_PIN_5;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  GPIO_InitStruct.Alternate = GPIO_AF8_SPI6;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(TP_IRQ_EXTI_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(TP_IRQ_EXTI_IRQn);
@@ -792,6 +792,7 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+int16_t* ptr_sine_wave_index = NULL;
 void update_phase_inc(float frequency);
 
 void gpio_irq_handler(uint16_t btn)
@@ -814,14 +815,15 @@ void update_phase_inc(float frequency)
 
 void fill_sine_wave(int16_t* pData, size_t len)
 {
-	int16_t sample = 0;
-	int16_t* ptr_data = pData;
-	buffer_is_proccessing = 1;
+	static float phase = 0.0f;
+	static int16_t sample = 0;
+
+	osSemaphoreAcquire(sema_audioHandle, portMAX_DELAY);
 	for (uint16_t i = 0; i < len ; i+=2)
 	{
-		sample = (int16_t)(arm_sin_f32(phase) * 32767); // Scale to int16 range
-		*ptr_data++ = sample;
-		*ptr_data++ = sample;
+		sample = (int16_t)(sinf(phase) * 32767); // Scale to int16 range
+		pData[i] = sample;
+		pData[i+1] = sample;
 
 		phase = phase + phase_inc;
 
@@ -831,25 +833,17 @@ void fill_sine_wave(int16_t* pData, size_t len)
 		}
 
 	}
-	buffer_is_proccessing = 0;
+	osSemaphoreRelease(sema_audioHandle);
 }
 
 void HAL_SAI_TxHalfCpltCallback(SAI_HandleTypeDef *hsai)
 {
-	if (buffer_is_proccessing)
-	{
-		++dma_overflow;
-	}else
-	fill_sine_wave(sine_wave_440hz_48khz, SINE_WAVE_SIZE / 2);
+	fill_sine_wave(ptr_sine_wave_index, SINE_WAVE_SIZE / 2);
 }
 
 void HAL_SAI_TxCpltCallback(SAI_HandleTypeDef *hsai)
 {
-	if (buffer_is_proccessing)
-	{
-		++dma_overflow;
-	}else
-	fill_sine_wave(&sine_wave_440hz_48khz[SINE_WAVE_SIZE / 2], SINE_WAVE_SIZE / 2);
+	fill_sine_wave(&ptr_sine_wave_index[SINE_WAVE_SIZE / 2], SINE_WAVE_SIZE / 2);
 }
 //void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s)
 //{
@@ -892,19 +886,26 @@ void audioTaskHandler(void *argument)
   /* USER CODE BEGIN audioTaskHandler */
 	// HAL_I2S_
   // I2S ve I2C başlatıldıktan sonra:
-  
-    // I2S DMA ile 48kHz 16-bit ses verisi gönder
 
-	  fill_sine_wave(sine_wave_440hz_48khz, SINE_WAVE_SIZE);
-	  osDelay(1000);
+    // I2S DMA ile 48kHz 16-bit ses verisi gönder
+//    uint8_t buffer_index = 0;
+      ptr_sine_wave_index = sine_wave_440hz_48khz;
+	  fill_sine_wave(ptr_sine_wave_index, SINE_WAVE_SIZE);
+	  SCB_CleanDCache_by_Addr((uint32_t*)ptr_sine_wave_index, SINE_WAVE_SIZE * sizeof(int16_t));
 	  // sine_wave_440hz_48khz[0] = 25300;
 	  HAL_SAI_Abort(&hsai_BlockB2);
 	  MX_SAI2_Init();
-	  HAL_SAI_Transmit_DMA(&hsai_BlockB2, (uint8_t*)sine_wave_440hz_48khz, SINE_WAVE_SIZE);
+
+	  HAL_SAI_Transmit_DMA(&hsai_BlockB2, (uint8_t*)ptr_sine_wave_index, SINE_WAVE_SIZE);
   /* Infinite loop */
   for(;;)
   {
-	  osDelay(10);
+//	ptr_sine_wave_index = buffer_index ? sine_wave_440hz_48khz : sine_wave_440hz_48khz_2;
+//	buffer_index ^= 1;
+//	fill_sine_wave(ptr_sine_wave_index, SINE_WAVE_SIZE);
+//	xTaskNotifyWait(0, UINT32_MAX, NULL, portMAX_DELAY);
+//    SCB_CleanDCache_by_Addr((uint32_t*)ptr_sine_wave_index, SINE_WAVE_SIZE * sizeof(int16_t));
+//    HAL_SAI_Transmit_DMA(&hsai_BlockB2, (uint8_t*)ptr_sine_wave_index, SINE_WAVE_SIZE);
   }
   /* USER CODE END audioTaskHandler */
 }

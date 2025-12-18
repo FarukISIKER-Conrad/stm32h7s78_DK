@@ -219,6 +219,7 @@ SECTIONS
     . = ALIGN(0x8);
   } >RAM_CMD
   
+  
     FontFlashSection :
   {
     *(FontFlashSection FontFlashSection.*)
