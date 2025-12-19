@@ -29,6 +29,7 @@
 #include "wm8904.h"
 #include <math.h>
 #include "dsp/fast_math_functions_f16.h"
+#include "audio_drv.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -792,6 +793,20 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+audio_drv_t audio_drv = {
+		.sampling_frequency = 48000,
+		.is_circular_dma_enabled = 1,
+		.sine = {
+
+				.tx_data_size = SINE_WAVE_SIZE,
+				.p_tx_data = sine_wave_440hz_48khz,
+				.phase = 0,
+				.phase_inc = 0,
+				.frequency = 100
+		}
+};
+
 int16_t* ptr_sine_wave_index = NULL;
 void update_phase_inc(float frequency);
 
@@ -805,6 +820,7 @@ void gpio_irq_handler(uint16_t btn)
 	else
 		frequency += 100;
 	update_phase_inc(frequency);
+	audio_drv_update_frequency(&audio_drv, frequency);
 }
 
 
@@ -836,14 +852,17 @@ void fill_sine_wave(int16_t* pData, size_t len)
 	osSemaphoreRelease(sema_audioHandle);
 }
 
+
 void HAL_SAI_TxHalfCpltCallback(SAI_HandleTypeDef *hsai)
 {
-	fill_sine_wave(ptr_sine_wave_index, SINE_WAVE_SIZE / 2);
+	// fill_sine_wave(ptr_sine_wave_index, SINE_WAVE_SIZE / 2);
+	audio_drv.callback.tx_half_cplt(&audio_drv);
 }
 
 void HAL_SAI_TxCpltCallback(SAI_HandleTypeDef *hsai)
 {
-	fill_sine_wave(&ptr_sine_wave_index[SINE_WAVE_SIZE / 2], SINE_WAVE_SIZE / 2);
+	// fill_sine_wave(&ptr_sine_wave_index[SINE_WAVE_SIZE / 2], SINE_WAVE_SIZE / 2);
+	audio_drv.callback.tx_cplt(&audio_drv);
 }
 //void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s)
 //{
@@ -889,14 +908,17 @@ void audioTaskHandler(void *argument)
 
     // I2S DMA ile 48kHz 16-bit ses verisi gönder
 //    uint8_t buffer_index = 0;
-      ptr_sine_wave_index = sine_wave_440hz_48khz;
-	  fill_sine_wave(ptr_sine_wave_index, SINE_WAVE_SIZE);
-	  SCB_CleanDCache_by_Addr((uint32_t*)ptr_sine_wave_index, SINE_WAVE_SIZE * sizeof(int16_t));
-	  // sine_wave_440hz_48khz[0] = 25300;
-	  HAL_SAI_Abort(&hsai_BlockB2);
-	  MX_SAI2_Init();
-
-	  HAL_SAI_Transmit_DMA(&hsai_BlockB2, (uint8_t*)ptr_sine_wave_index, SINE_WAVE_SIZE);
+//      ptr_sine_wave_index = sine_wave_440hz_48khz;
+//	  fill_sine_wave(ptr_sine_wave_index, SINE_WAVE_SIZE);
+//	  SCB_CleanDCache_by_Addr((uint32_t*)ptr_sine_wave_index, SINE_WAVE_SIZE * sizeof(int16_t));
+//	  HAL_SAI_Abort(&hsai_BlockB2);
+//	  MX_SAI2_Init();
+//
+	  //HAL_SAI_Transmit_DMA(&hsai_BlockB2, (uint8_t*)ptr_sine_wave_index, SINE_WAVE_SIZE);
+	audio_drv_update_frequency(&audio_drv, 100);
+	audio_drv.hsai = &hsai_BlockB2;
+	audio_drv_init(&audio_drv);
+	audio_drv_start_dma(&audio_drv);
   /* Infinite loop */
   for(;;)
   {
