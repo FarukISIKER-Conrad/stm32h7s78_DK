@@ -102,7 +102,7 @@ const osSemaphoreAttr_t sema_audio_attributes = {
   .name = "sema_audio"
 };
 /* USER CODE BEGIN PV */
-#define SINE_WAVE_SIZE (1024 * 2)
+#define SINE_WAVE_SIZE (2048 * 2)
 ALIGN_32BYTES (int16_t sine_wave_440hz_48khz[SINE_WAVE_SIZE]) __attribute__((section("BufferSection"))); //__attribute__((section("BufferSection")));
 
 
@@ -700,7 +700,7 @@ static void MX_SAI2_Init(void)
   hsai_BlockB2.Init.OutputDrive = SAI_OUTPUTDRIVE_DISABLE;
   hsai_BlockB2.Init.NoDivider = SAI_MASTERDIVIDER_ENABLE;
   hsai_BlockB2.Init.FIFOThreshold = SAI_FIFOTHRESHOLD_EMPTY;
-  hsai_BlockB2.Init.AudioFrequency = SAI_AUDIO_FREQUENCY_48K;
+  hsai_BlockB2.Init.AudioFrequency = SAI_AUDIO_FREQUENCY_44K;
   hsai_BlockB2.Init.SynchroExt = SAI_SYNCEXT_DISABLE;
   hsai_BlockB2.Init.MonoStereoMode = SAI_STEREOMODE;
   hsai_BlockB2.Init.CompandingMode = SAI_NOCOMPANDING;
