@@ -795,6 +795,7 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 audio_drv_t audio_drv = {
+		.hsai = &hsai_BlockB2,
 		.sampling_frequency = 48000,
 		.is_circular_dma_enabled = 1,
 		.sine = {
@@ -915,8 +916,6 @@ void audioTaskHandler(void *argument)
 //	  MX_SAI2_Init();
 //
 	  //HAL_SAI_Transmit_DMA(&hsai_BlockB2, (uint8_t*)ptr_sine_wave_index, SINE_WAVE_SIZE);
-	audio_drv_update_frequency(&audio_drv, 100);
-	audio_drv.hsai = &hsai_BlockB2;
 	audio_drv_init(&audio_drv);
 	audio_drv_start_dma(&audio_drv);
   /* Infinite loop */

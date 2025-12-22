@@ -27,6 +27,7 @@ int audio_drv_init(audio_drv_t *self)
 		return -3;
 	}
 
+	audio_drv_update_frequency(self, self->sine.frequency);
 	audio_drv_fill_sine_wave(self, self->sine.p_tx_data, self->sine.tx_data_size);
 
 	if (self->is_circular_dma_enabled)
@@ -56,12 +57,6 @@ void audio_drv_update_frequency(audio_drv_t* self, float frequency)
 
 	self->sine.frequency = frequency;
 	self->sine.phase_inc = M_TWOPI * self->sine.frequency / self->sampling_frequency;
-}
-
-void audio_drv_register_cb(audio_drv_t* self, audio_drv_callback_t* cb)
-{
-	self->callback.tx_cplt = cb->tx_cplt;
-	self->callback.tx_half_cplt = cb->tx_half_cplt;
 }
 
 static void audio_drv_fill_sine_wave(audio_drv_t *self, int16_t* pData, size_t len)
