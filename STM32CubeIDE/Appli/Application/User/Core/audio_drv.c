@@ -7,6 +7,21 @@
 #include "audio_drv.h"
 #include "math.h"
 #include "string.h"
+#include "mp3_decoder.h"
+
+// Global değişkenler
+
+// MP3 decoder internal buffer (decoder'ın kendi işlemleri için)
+#define MP3_DECODER_BUFFER_SIZE (2048 * 2)  // 2x ping-pong için
+ALIGN_32BYTES (int16_t mp3_decoder_internal_buffer[MP3_DECODER_BUFFER_SIZE])
+    __attribute__((section("BufferSection")));
+
+
+mp3_decoder_streaming_t mp3_decoder;
+
+extern const uint8_t mp3_file_data[];
+extern const size_t mp3_file_size;
+
 
 static void audio_drv_tx_half_callback(void* self);
 static void audio_drv_tx_callback(void* self);
@@ -27,8 +42,46 @@ int audio_drv_init(audio_drv_t *self)
 		return -3;
 	}
 
+
 	audio_drv_update_frequency(self, self->sine.frequency);
-	audio_drv_fill_sine_wave(self, self->sine.p_tx_data, self->sine.tx_data_size);
+
+	if (self->type == __SINE_WAVE)
+	{
+		audio_drv_fill_sine_wave(self, self->sine.p_tx_data, self->sine.tx_data_size);
+	}
+	else
+	{
+		HAL_SAI_DeInit(self->hsai);
+		self->hsai->Init.AudioFrequency = SAI_AUDIO_FREQUENCY_44K;
+		HAL_SAI_Init(self->hsai);
+
+		// 1. Initialize decoder
+		mp3_decoder_streaming_init(&mp3_decoder,mp3_decoder_internal_buffer, self->mp3.tx_data_size / 2);
+
+		// 2. Load MP3 data
+		mp3_decoder_streaming_load(&mp3_decoder, (uint8_t *)mp3_file_data, mp3_file_size);
+
+		// 3. Enable loop (optional)
+		mp3_decoder_streaming_set_loop(&mp3_decoder, 1);
+
+		// 4. Start - get first chunk
+		mp3_decoder_streaming_start(&mp3_decoder);
+		if (mp3_decoder.current_chunk == NULL) {
+			// Error
+			return -1;  // Hata kodu -1 olmalı (0 değil, 0 başarılı anlamına gelir)
+		}
+
+		// 5. İlk chunk'ı buffer'a kopyala (DMA başlamadan önce)
+		size_t initial_samples;
+		int16_t *first_chunk = mp3_decoder_streaming_next_chunk(&mp3_decoder, &initial_samples);
+		if (first_chunk != NULL) {
+			size_t bytes_to_copy = initial_samples * sizeof(int16_t);
+			memcpy(self->mp3.p_tx_data, first_chunk, bytes_to_copy);
+		}
+		else {
+			return -2;  // İlk chunk alınamadı
+		}
+	}
 
 	if (self->is_circular_dma_enabled)
 	{
@@ -40,7 +93,14 @@ int audio_drv_init(audio_drv_t *self)
 
 int audio_drv_start_dma(audio_drv_t* self)
 {
-	HAL_SAI_Transmit_DMA(self->hsai, (uint8_t *)self->sine.p_tx_data, self->sine.tx_data_size);
+	if (self->type == __SINE_WAVE )
+	{
+		HAL_SAI_Transmit_DMA(self->hsai, (uint8_t *)self->sine.p_tx_data, self->sine.tx_data_size);
+	}
+	else
+	{
+		HAL_SAI_Transmit_DMA(self->hsai, (uint8_t*)self->mp3.p_tx_data, self->mp3.tx_data_size);
+	}
 	return 0;
 }
 
@@ -87,13 +147,56 @@ static void audio_drv_fill_sine_wave(audio_drv_t *self, int16_t* pData, size_t l
 static void audio_drv_tx_half_callback(void* self)
 {
 	audio_drv_t *audio_drv = (audio_drv_t *)self;
-	audio_drv_fill_sine_wave(audio_drv, audio_drv->sine.p_tx_data, audio_drv->sine.tx_data_size / 2);
+	if (audio_drv->type == __SINE_WAVE )
+	{
+		audio_drv_fill_sine_wave(audio_drv, audio_drv->sine.p_tx_data, audio_drv->sine.tx_data_size / 2);
+	}
+	else
+	{
+		// DMA ilk yarıyı oynatıyor, ikinci yarıyı doldur
+		size_t samples;
+		int16_t *next_chunk = mp3_decoder_streaming_next_chunk(&mp3_decoder, &samples);
+
+		if (next_chunk == NULL) {
+			// End of file (loop disabled)
+			HAL_SAI_DMAStop(audio_drv->hsai);
+		}
+		else {
+			// İkinci yarıya kopyala (buffer'ın ortasından başla)
+			size_t bytes_to_copy = samples * sizeof(int16_t);
+
+
+			memcpy(audio_drv->mp3.p_tx_data,
+			       next_chunk,
+			       bytes_to_copy);
+		}
+	}
 }
 
 static void audio_drv_tx_callback(void* self)
 {
 	audio_drv_t *audio_drv = (audio_drv_t *)self;
-	audio_drv_fill_sine_wave(audio_drv, &audio_drv->sine.p_tx_data[audio_drv->sine.tx_data_size / 2], audio_drv->sine.tx_data_size / 2);
-}
+	if (audio_drv->type == __SINE_WAVE )
+	{
+		audio_drv_fill_sine_wave(audio_drv, &audio_drv->sine.p_tx_data[audio_drv->sine.tx_data_size / 2], audio_drv->sine.tx_data_size / 2);
+	}
+	else
+	{
+		// DMA ikinci yarıyı oynatıyor, ilk yarıyı doldur
+		size_t samples;
+		int16_t *next_chunk = mp3_decoder_streaming_next_chunk(&mp3_decoder, &samples);
 
+		if (next_chunk == NULL) {
+			// End of file (loop disabled)
+			HAL_SAI_DMAStop(audio_drv->hsai);
+		}
+		else {
+			// İlk yarıya kopyala (buffer'ın başından)
+			size_t bytes_to_copy = samples * sizeof(int16_t);
+			memcpy(&audio_drv->mp3.p_tx_data[audio_drv->mp3.tx_data_size / 2],
+			       next_chunk,
+			       bytes_to_copy);
+		}
+	}
+}
 

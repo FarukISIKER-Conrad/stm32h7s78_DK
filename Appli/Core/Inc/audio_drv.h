@@ -6,6 +6,21 @@
 #include "task.h"
 #include "semphr.h"
 
+
+
+typedef enum
+{
+	__SINE_WAVE,
+	__MP3_FILE
+} audio_drv_type_e;
+
+typedef struct
+{
+	size_t tx_data_size;
+	int16_t* p_tx_data;
+	int16_t* p_tx_chunk;
+} audio_drv_mp3_t;
+
 typedef struct
 {
 	size_t tx_data_size;
@@ -15,11 +30,14 @@ typedef struct
 	float frequency;
 } audio_drv_sine_wave_t;
 
+
 typedef struct
 {
 	void (*tx_half_cplt)(void *self);
 	void (*tx_cplt)(void *self);
 } audio_drv_callback_t;
+
+
 
 typedef struct
 {
@@ -31,7 +49,9 @@ typedef struct
 	uint8_t is_circular_dma_enabled;
 	audio_drv_callback_t callback;
 	audio_drv_sine_wave_t sine;
+	audio_drv_mp3_t mp3;
 	float sampling_frequency;
+	audio_drv_type_e type;
 } audio_drv_t;
 
 

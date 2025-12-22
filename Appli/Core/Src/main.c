@@ -74,7 +74,7 @@ DMA_HandleTypeDef handle_GPDMA1_Channel15;
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
-  .stack_size = 128 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for TouchGFXTask */
@@ -88,7 +88,7 @@ const osThreadAttr_t TouchGFXTask_attributes = {
 osThreadId_t audioTaskHandleHandle;
 const osThreadAttr_t audioTaskHandle_attributes = {
   .name = "audioTaskHandle",
-  .stack_size = 2048 * 4,
+  .stack_size = 4096 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for queue_gpio */
@@ -104,6 +104,8 @@ const osSemaphoreAttr_t sema_audio_attributes = {
 /* USER CODE BEGIN PV */
 #define SINE_WAVE_SIZE (1024 * 2)
 ALIGN_32BYTES (int16_t sine_wave_440hz_48khz[SINE_WAVE_SIZE]) __attribute__((section("BufferSection"))); //__attribute__((section("BufferSection")));
+
+
 
 static const float sampling_frequency = 48000.0f;
 static float phase_inc = M_TWOPI * 440.0f / sampling_frequency;
@@ -805,6 +807,11 @@ audio_drv_t audio_drv = {
 				.phase = 0,
 				.phase_inc = 0,
 				.frequency = 100
+		},
+		.type = __MP3_FILE,
+		.mp3 = {
+				.tx_data_size = SINE_WAVE_SIZE,
+				.p_tx_data = sine_wave_440hz_48khz,
 		}
 };
 
@@ -904,29 +911,12 @@ void StartDefaultTask(void *argument)
 void audioTaskHandler(void *argument)
 {
   /* USER CODE BEGIN audioTaskHandler */
-	// HAL_I2S_
-  // I2S ve I2C başlatıldıktan sonra:
-
-    // I2S DMA ile 48kHz 16-bit ses verisi gönder
-//    uint8_t buffer_index = 0;
-//      ptr_sine_wave_index = sine_wave_440hz_48khz;
-//	  fill_sine_wave(ptr_sine_wave_index, SINE_WAVE_SIZE);
-//	  SCB_CleanDCache_by_Addr((uint32_t*)ptr_sine_wave_index, SINE_WAVE_SIZE * sizeof(int16_t));
-//	  HAL_SAI_Abort(&hsai_BlockB2);
-//	  MX_SAI2_Init();
-//
-	  //HAL_SAI_Transmit_DMA(&hsai_BlockB2, (uint8_t*)ptr_sine_wave_index, SINE_WAVE_SIZE);
 	audio_drv_init(&audio_drv);
 	audio_drv_start_dma(&audio_drv);
   /* Infinite loop */
   for(;;)
   {
-//	ptr_sine_wave_index = buffer_index ? sine_wave_440hz_48khz : sine_wave_440hz_48khz_2;
-//	buffer_index ^= 1;
-//	fill_sine_wave(ptr_sine_wave_index, SINE_WAVE_SIZE);
-//	xTaskNotifyWait(0, UINT32_MAX, NULL, portMAX_DELAY);
-//    SCB_CleanDCache_by_Addr((uint32_t*)ptr_sine_wave_index, SINE_WAVE_SIZE * sizeof(int16_t));
-//    HAL_SAI_Transmit_DMA(&hsai_BlockB2, (uint8_t*)ptr_sine_wave_index, SINE_WAVE_SIZE);
+	  vTaskDelay(pdMS_TO_TICKS(10));
   }
   /* USER CODE END audioTaskHandler */
 }

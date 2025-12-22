@@ -296,7 +296,8 @@ board_c_files += \
 	Appli/Core/Src/system_stm32h7rsxx.c \
 	STM32CubeIDE/Appli/Application/User/Core/wm8904_reg.c \
 	STM32CubeIDE/Appli/Application/User/Core/wm8904.c \
-	Appli/Core/Src/audio_drv.c
+	Appli/Core/Src/audio_drv.c \
+	Audio/guitar_mp3_data.c
 # Drivers
 board_include_paths := \
 	$(Drivers_path)/CMSIS/Include \
