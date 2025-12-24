@@ -30,6 +30,8 @@
 #include <math.h>
 #include "dsp/fast_math_functions_f16.h"
 #include "audio_drv.h"
+#include "lfs_user.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -872,6 +874,11 @@ void HAL_SAI_TxCpltCallback(SAI_HandleTypeDef *hsai)
 	// fill_sine_wave(&ptr_sine_wave_index[SINE_WAVE_SIZE / 2], SINE_WAVE_SIZE / 2);
 	audio_drv.callback.tx_cplt(&audio_drv);
 }
+
+int __io_putchar(int ch) {
+    ITM_SendChar(ch);
+    return ch;
+}
 //void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s)
 //{
 //	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -902,6 +909,7 @@ void StartDefaultTask(void *argument)
 }
 
 /* USER CODE BEGIN Header_audioTaskHandler */
+
 /**
 * @brief Function implementing the audioTaskHandle thread.
 * @param argument: Not used
@@ -911,8 +919,16 @@ void StartDefaultTask(void *argument)
 void audioTaskHandler(void *argument)
 {
   /* USER CODE BEGIN audioTaskHandler */
-	audio_drv_init(&audio_drv);
-	audio_drv_start_dma(&audio_drv);
+	// lfs_t lfs;
+	// lfs_mount_example(&lfs);
+	littlefs_mount_ro();
+	lfs_list_dir("/music");
+	littlefs_dump_mp3_header("/music/guitar.mp3");
+	littlefs_list_music();
+	//audio_drv_init(&audio_drv);
+	//audio_drv_start_dma(&audio_drv);
+	// ---- Public config ----
+
   /* Infinite loop */
   for(;;)
   {
