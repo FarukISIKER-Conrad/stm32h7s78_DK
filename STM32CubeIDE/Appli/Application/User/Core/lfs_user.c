@@ -1,6 +1,7 @@
 #include "lfs.h"
 #include <string.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #define LFS_BASE_ADDR      (0x77B00000UL)       // QSPI memory-mapped partition base
 #define LFS_SIZE_BYTES     (5UL * 1024UL * 1024UL)
@@ -140,4 +141,66 @@ void lfs_list_dir(const char *path)
     }
 
     lfs_dir_close(&g_lfs, &dir);
+}
+
+// Get file size
+int lfs_get_file_size(const char *path, size_t *size) {
+    struct lfs_info info;
+    int err = lfs_stat(&g_lfs, path, &info);
+    if (err < 0) {
+        printf("lfs_stat(%s) failed: %d\r\n", path, err);
+        return err;
+    }
+    
+    if (info.type != LFS_TYPE_REG) {
+        printf("%s is not a regular file\r\n", path);
+        return -1;
+    }
+    
+    *size = info.size;
+    printf("File %s size: %lu bytes\r\n", path, (unsigned long)info.size);
+    return 0;
+}
+
+// Read entire file into buffer
+int lfs_read_file(const char *path, uint8_t *buffer, size_t buffer_size, size_t *bytes_read) {
+    lfs_file_t file;
+    
+    // Open file
+    int err = lfs_file_open(&g_lfs, &file, path, LFS_O_RDONLY);
+    if (err < 0) {
+        printf("lfs_file_open(%s) failed: %d\r\n", path, err);
+        return err;
+    }
+    
+    // Get file size
+    lfs_soff_t file_size = lfs_file_size(&g_lfs, &file);
+    if (file_size < 0) {
+        printf("lfs_file_size failed: %d\r\n", (int)file_size);
+        lfs_file_close(&g_lfs, &file);
+        return (int)file_size;
+    }
+    
+    // Check buffer size
+    if ((size_t)file_size > buffer_size) {
+        printf("Buffer too small. File: %lu, Buffer: %lu\r\n", 
+               (unsigned long)file_size, (unsigned long)buffer_size);
+        lfs_file_close(&g_lfs, &file);
+        return -1;
+    }
+    
+    // Read file
+    lfs_ssize_t read_result = lfs_file_read(&g_lfs, &file, buffer, (size_t)file_size);
+    if (read_result < 0) {
+        printf("lfs_file_read failed: %d\r\n", (int)read_result);
+        lfs_file_close(&g_lfs, &file);
+        return (int)read_result;
+    }
+    
+    *bytes_read = (size_t)read_result;
+    printf("Successfully read %lu bytes from %s\r\n", (unsigned long)*bytes_read, path);
+    
+    // Close file
+    lfs_file_close(&g_lfs, &file);
+    return 0;
 }

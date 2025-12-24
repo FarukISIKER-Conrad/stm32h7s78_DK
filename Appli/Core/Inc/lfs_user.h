@@ -19,5 +19,7 @@ int littlefs_mount_ro(void);
 void littlefs_list_music(void);
 void littlefs_dump_mp3_header(const char *path);
 void lfs_list_dir(const char *path);
+int lfs_get_file_size(const char *path, size_t *size);
+int lfs_read_file(const char *path, uint8_t *buffer, size_t buffer_size, size_t *bytes_read);
 
 #endif

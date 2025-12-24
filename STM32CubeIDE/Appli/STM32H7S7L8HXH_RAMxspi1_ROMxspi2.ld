@@ -212,6 +212,14 @@ SECTIONS
     . = ALIGN(0x8);
   } >EXTRAM
   
+  /* BufferSection'dan hemen sonra ekleyin */
+AudioBufferSection (NOLOAD) :
+{
+  *(.AudioBufferSection)
+  *(.AudioBufferSection*)
+  . = ALIGN(0x8);
+} >EXTRAM
+  
   UncachedSection (NOLOAD) :
   {
     *(Nemagfx_Memory_Pool_Buffer Nemagfx_Memory_Pool_Buffer.*)

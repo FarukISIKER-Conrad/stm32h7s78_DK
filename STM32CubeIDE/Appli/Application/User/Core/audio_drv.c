@@ -7,15 +7,22 @@
 #include "audio_drv.h"
 #include "math.h"
 #include "string.h"
+#include "stdio.h"
 #include "mp3_decoder.h"
-
+#include "lfs_user.h"
 // Global değişkenler
 
 // MP3 decoder internal buffer (decoder'ın kendi işlemleri için)
 #define MP3_DECODER_BUFFER_SIZE (2048 * 2)  // 2x ping-pong için
 ALIGN_32BYTES (int16_t mp3_decoder_internal_buffer[MP3_DECODER_BUFFER_SIZE])
-    __attribute__((section("BufferSection")));
+    __attribute__((section(".AudioBufferSection")));
 
+// MP3 file buffer (LittleFS'den okunan dosya için)
+#define MP3_FILE_BUFFER_SIZE (1024 * 1024)  // 256KB max file size
+ALIGN_32BYTES (static uint8_t mp3_file_buffer[MP3_FILE_BUFFER_SIZE])
+    __attribute__((section(".AudioBufferSection")));
+
+static size_t mp3_file_loaded_size = 0;
 
 mp3_decoder_streaming_t mp3_decoder;
 
@@ -60,11 +67,53 @@ int audio_drv_init(audio_drv_t *self)
 		self->hsai->Init.AudioFrequency = SAI_AUDIO_FREQUENCY_44K;
 		HAL_SAI_Init(self->hsai);
 
+		// LittleFS mount
+		int mount_result = littlefs_mount_ro();
+		if (mount_result != 0) {
+			printf("LittleFS mount failed: %d\r\n", mount_result);
+			return -10;
+		}
+		printf("LittleFS mounted successfully\r\n");
+
+		// List directory contents
+		lfs_list_dir("/music");
+
+		// Get file size
+		size_t file_size = 0;
+		if (lfs_get_file_size("/music/guitar.mp3", &file_size) != 0) {
+			printf("Failed to get file size\r\n");
+			return -11;
+		}
+
+		// Check if file fits in buffer
+		if (file_size > MP3_FILE_BUFFER_SIZE) {
+			printf("File too large: %lu > %lu\r\n", 
+			       (unsigned long)file_size, (unsigned long)MP3_FILE_BUFFER_SIZE);
+			return -12;
+		}
+
+		// Read MP3 file from LittleFS
+		size_t bytes_read = 0;
+		if (lfs_read_file("/music/guitar.mp3", mp3_file_buffer, MP3_FILE_BUFFER_SIZE, &bytes_read) != 0) {
+			printf("Failed to read MP3 file\r\n");
+			return -13;
+		}
+
+		mp3_file_loaded_size = bytes_read;
+		printf("MP3 file loaded: %lu bytes\r\n", (unsigned long)mp3_file_loaded_size);
+
+		// Dump header for verification
+		printf("MP3 Header: ");
+		for (int i = 0; i < 16 && i < (int)mp3_file_loaded_size; i++) {
+			printf("%02X ", mp3_file_buffer[i]);
+		}
+		printf("\r\n");
+
 		// 1. Initialize decoder
 		mp3_decoder_streaming_init(&mp3_decoder, mp3_decoder_internal_buffer, self->mp3.tx_data_size / 2);
 
-		// 2. Load MP3 data
-		mp3_decoder_streaming_load(&mp3_decoder, (uint8_t *)dog_mp3_file_data, dog_mp3_file_size);
+		// 2. Load MP3 data from LittleFS
+		mp3_decoder_streaming_load(&mp3_decoder, mp3_file_buffer, mp3_file_loaded_size);
 
 		// 3. Enable loop
 		mp3_decoder_streaming_set_loop(&mp3_decoder, 1);

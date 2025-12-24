@@ -104,8 +104,8 @@ const osSemaphoreAttr_t sema_audio_attributes = {
   .name = "sema_audio"
 };
 /* USER CODE BEGIN PV */
-#define SINE_WAVE_SIZE (2048 * 2)
-ALIGN_32BYTES (int16_t sine_wave_440hz_48khz[SINE_WAVE_SIZE]) __attribute__((section("BufferSection"))); //__attribute__((section("BufferSection")));
+#define SINE_WAVE_SIZE (1152 * 2)
+ALIGN_32BYTES (int16_t sine_wave_440hz_48khz[SINE_WAVE_SIZE]) __attribute__((section(".AudioBufferSection"))); //__attribute__((section("BufferSection")));
 
 
 
@@ -810,7 +810,7 @@ audio_drv_t audio_drv = {
 				.phase_inc = 0,
 				.frequency = 100
 		},
-		.type = __MP3_FILE,
+		.type = __SINE_WAVE,
 		.mp3 = {
 				.tx_data_size = SINE_WAVE_SIZE,
 				.p_tx_data = sine_wave_440hz_48khz,
@@ -921,12 +921,12 @@ void audioTaskHandler(void *argument)
   /* USER CODE BEGIN audioTaskHandler */
 	// lfs_t lfs;
 	// lfs_mount_example(&lfs);
-	littlefs_mount_ro();
-	lfs_list_dir("/music");
-	littlefs_dump_mp3_header("/music/guitar.mp3");
-	littlefs_list_music();
-	//audio_drv_init(&audio_drv);
-	//audio_drv_start_dma(&audio_drv);
+//	littlefs_mount_ro();
+//	lfs_list_dir("/music");
+//	littlefs_dump_mp3_header("/music/guitar.mp3");
+//	littlefs_list_music();
+	audio_drv_init(&audio_drv);
+	audio_drv_start_dma(&audio_drv);
 	// ---- Public config ----
 
   /* Infinite loop */
