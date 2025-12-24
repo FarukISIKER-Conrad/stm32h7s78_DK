@@ -11,7 +11,7 @@
 #include "mp3_decoder.h"
 #include "lfs_user.h"
 // Global değişkenler
-
+extern DMA_HandleTypeDef handle_GPDMA1_Channel15;
 // MP3 decoder internal buffer (decoder'ın kendi işlemleri için)
 #define MP3_DECODER_BUFFER_SIZE (2048 * 2)  // 2x ping-pong için
 ALIGN_32BYTES (int16_t mp3_decoder_internal_buffer[MP3_DECODER_BUFFER_SIZE])
@@ -51,6 +51,12 @@ int audio_drv_init(audio_drv_t *self)
 		return -3;
 	}
 
+	handle_GPDMA1_Channel15.InitLinkedList.LinkedListMode = self->is_circular_dma_enabled ?
+															DMA_LINKEDLIST_CIRCULAR : DMA_LINKEDLIST_NORMAL;
+    if (HAL_DMAEx_List_Init(&handle_GPDMA1_Channel15) != HAL_OK)
+    {
+      Error_Handler();
+    }
 
 	audio_drv_update_frequency(self, self->sine.frequency);
 
@@ -109,8 +115,9 @@ int audio_drv_init(audio_drv_t *self)
 		}
 		printf("\r\n");
 
+		uint32_t buffer_size = self->is_circular_dma_enabled ? self->mp3.tx_data_size / 2 : self->mp3.tx_data_size;
 		// 1. Initialize decoder
-		mp3_decoder_streaming_init(&mp3_decoder, mp3_decoder_internal_buffer, self->mp3.tx_data_size / 2);
+		mp3_decoder_streaming_init(&mp3_decoder, mp3_decoder_internal_buffer, sizeof(mp3_decoder_internal_buffer));
 
 		// 2. Load MP3 data from LittleFS
 		mp3_decoder_streaming_load(&mp3_decoder, mp3_file_buffer, mp3_file_loaded_size);
@@ -136,32 +143,34 @@ int audio_drv_init(audio_drv_t *self)
 			return -1;
 		}
 
-		// 5. Buffer'ın TAMAMINI doldur (her iki yarı)
-		size_t samples;
+		// 5. Buffer hazırlığı
+		// Circular DMA: Buffer'ın her iki yarısını doldur
+		if (self->is_circular_dma_enabled)
+		{
+			size_t samples;
 
-		// İLK yarıyı doldur
-		int16_t *chunk1 = mp3_decoder_streaming_next_chunk(&mp3_decoder, &samples);
-		if (chunk1 != NULL) {
-			memcpy(self->mp3.p_tx_data, chunk1, samples * sizeof(int16_t));
-		}
-		else {
-			return -2;
-		}
+			// İLK yarıyı doldur
+			int16_t *chunk1 = mp3_decoder_streaming_next_chunk(&mp3_decoder, &samples);
+			if (chunk1 != NULL) {
+				memcpy(self->mp3.p_tx_data, chunk1, samples * sizeof(int16_t));
+			}
+			else {
+				return -2;
+			}
 
-		// İKİNCİ yarıyı doldur
-		int16_t *chunk2 = mp3_decoder_streaming_next_chunk(&mp3_decoder, &samples);
-		if (chunk2 != NULL) {
-			memcpy(&self->mp3.p_tx_data[self->mp3.tx_data_size / 2], chunk2, samples * sizeof(int16_t));
+			// İKİNCİ yarıyı doldur
+			int16_t *chunk2 = mp3_decoder_streaming_next_chunk(&mp3_decoder, &samples);
+			if (chunk2 != NULL) {
+				memcpy(&self->mp3.p_tx_data[self->mp3.tx_data_size / 2], chunk2, samples * sizeof(int16_t));
+			}
+			else {
+				return -3;
+			}
 		}
-		else {
-			return -3;
-		}
+		// Normal DMA: İlk chunk audio_drv_start_dma()'de gönderilecek, burada hazırlık yok
 	}
 
-	if (self->is_circular_dma_enabled)
-	{
 
-	}
 
 	return 0;
 }
@@ -174,7 +183,24 @@ int audio_drv_start_dma(audio_drv_t* self)
 	}
 	else
 	{
-		HAL_SAI_Transmit_DMA(self->hsai, (uint8_t*)self->mp3.p_tx_data, self->mp3.tx_data_size);
+		// Normal DMA: İlk chunk'ı direkt decoder'dan gönder
+		if (!self->is_circular_dma_enabled)
+		{
+			size_t samples;
+			int16_t *first_chunk = mp3_decoder_streaming_next_chunk(&mp3_decoder, &samples);
+			if (first_chunk != NULL) {
+				size_t bytes_to_send = samples * sizeof(int16_t);
+				HAL_SAI_Transmit_DMA(self->hsai, (uint8_t*)first_chunk, bytes_to_send);
+			}
+			else {
+				return -1;  // Chunk alınamadı
+			}
+		}
+		// Circular DMA: Büyük buffer'ın tamamını gönder
+		else
+		{
+			HAL_SAI_Transmit_DMA(self->hsai, (uint8_t*)self->mp3.p_tx_data, self->mp3.tx_data_size);
+		}
 	}
 	return 0;
 }
@@ -228,17 +254,24 @@ static void audio_drv_tx_half_callback(void* self)
 	else
 	{
 		// Sine wave ile AYNI mantık: İLK yarıyı doldur
-		size_t samples;
-		int16_t *next_chunk = mp3_decoder_streaming_next_chunk(&mp3_decoder, &samples);
 
-		if (next_chunk == NULL) {
-			HAL_SAI_DMAStop(audio_drv->hsai);
+		if (audio_drv->is_circular_dma_enabled)
+		{
+			size_t samples;
+			int16_t *next_chunk = mp3_decoder_streaming_next_chunk(&mp3_decoder, &samples);
+			if (next_chunk == NULL) {
+				HAL_SAI_DMAStop(audio_drv->hsai);
+			}
+			else {
+				size_t bytes_to_copy = samples * sizeof(int16_t);
+				memcpy(audio_drv->mp3.p_tx_data,  // ✅ İLK yarı (baştan)
+				       next_chunk,
+				       bytes_to_copy);
+			}
 		}
-		else {
-			size_t bytes_to_copy = samples * sizeof(int16_t);
-			memcpy(audio_drv->mp3.p_tx_data,  // ✅ İLK yarı (baştan)
-			       next_chunk,
-			       bytes_to_copy);
+		else
+		{
+			// Normal DMA: Half callback GELMEZ, sadece complete callback gelir
 		}
 	}
 }
@@ -248,7 +281,14 @@ static void audio_drv_tx_callback(void* self)
 	audio_drv_t *audio_drv = (audio_drv_t *)self;
 	if (audio_drv->type == __SINE_WAVE )
 	{
-		audio_drv_fill_sine_wave(audio_drv, &audio_drv->sine.p_tx_data[audio_drv->sine.tx_data_size / 2], audio_drv->sine.tx_data_size / 2);
+		if (audio_drv->is_circular_dma_enabled)
+		{
+			audio_drv_fill_sine_wave(audio_drv, &audio_drv->sine.p_tx_data[audio_drv->sine.tx_data_size / 2], audio_drv->sine.tx_data_size / 2);
+		}
+		else
+		{
+			HAL_SAI_Transmit_DMA(audio_drv->hsai, audio_drv->sine.p_tx_data, audio_drv->sine.tx_data_size);
+		}
 	}
 	else
 	{
@@ -256,14 +296,28 @@ static void audio_drv_tx_callback(void* self)
 		size_t samples;
 		int16_t *next_chunk = mp3_decoder_streaming_next_chunk(&mp3_decoder, &samples);
 
-		if (next_chunk == NULL) {
-			HAL_SAI_DMAStop(audio_drv->hsai);
+		if (audio_drv->is_circular_dma_enabled)
+		{
+			if (next_chunk == NULL) {
+				HAL_SAI_DMAStop(audio_drv->hsai);
+			}
+			else {
+				size_t bytes_to_copy = samples * sizeof(int16_t);
+				memcpy(&audio_drv->mp3.p_tx_data[audio_drv->mp3.tx_data_size / 2],  // ✅ İKİNCİ yarı (ortadan)
+				       next_chunk,
+				       bytes_to_copy);
+			}
 		}
-		else {
-			size_t bytes_to_copy = samples * sizeof(int16_t);
-			memcpy(&audio_drv->mp3.p_tx_data[audio_drv->mp3.tx_data_size / 2],  // ✅ İKİNCİ yarı (ortadan)
-			       next_chunk,
-			       bytes_to_copy);
+		else
+		{
+			// Normal DMA: Sonraki chunk'ı direkt gönder (memcpy yok!)
+			if (next_chunk == NULL) {
+				HAL_SAI_DMAStop(audio_drv->hsai);
+			}
+			else {
+				size_t bytes_to_send = samples;
+				HAL_SAI_Transmit_DMA(audio_drv->hsai, (uint8_t*)next_chunk, bytes_to_send);
+			}
 		}
 	}
 }

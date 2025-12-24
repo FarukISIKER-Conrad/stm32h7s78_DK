@@ -61,8 +61,6 @@ extern DMA_HandleTypeDef handle_HPDMA1_Channel1;
 extern DMA_HandleTypeDef handle_HPDMA1_Channel0;
 extern JPEG_HandleTypeDef hjpeg;
 extern LTDC_HandleTypeDef hltdc;
-extern DMA_NodeTypeDef Node_GPDMA1_Channel15;
-extern DMA_QListTypeDef List_GPDMA1_Channel15;
 extern DMA_HandleTypeDef handle_GPDMA1_Channel15;
 extern TIM_HandleTypeDef htim6;
 

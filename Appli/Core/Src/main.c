@@ -68,8 +68,6 @@ DMA_HandleTypeDef handle_HPDMA1_Channel0;
 LTDC_HandleTypeDef hltdc;
 
 SAI_HandleTypeDef hsai_BlockB2;
-DMA_NodeTypeDef Node_GPDMA1_Channel15 __attribute__((section("noncacheable_buffer")));
-DMA_QListTypeDef List_GPDMA1_Channel15;
 DMA_HandleTypeDef handle_GPDMA1_Channel15;
 
 /* Definitions for defaultTask */
@@ -801,7 +799,7 @@ static void MX_GPIO_Init(void)
 audio_drv_t audio_drv = {
 		.hsai = &hsai_BlockB2,
 		.sampling_frequency = 48000,
-		.is_circular_dma_enabled = 1,
+		.is_circular_dma_enabled = 0,
 		.sine = {
 
 				.tx_data_size = SINE_WAVE_SIZE,
@@ -810,7 +808,7 @@ audio_drv_t audio_drv = {
 				.phase_inc = 0,
 				.frequency = 100
 		},
-		.type = __SINE_WAVE,
+		.type = __MP3_FILE,
 		.mp3 = {
 				.tx_data_size = SINE_WAVE_SIZE,
 				.p_tx_data = sine_wave_440hz_48khz,
